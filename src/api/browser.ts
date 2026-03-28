@@ -6,9 +6,10 @@ import {
 } from "playwright";
 
 export async function launchBrowser(url?: string) {
-	const browser = await chromium.launch({ headless: false });
+	const browser = await chromium.launch({ headless: true });
 	const context = await browser.newContext({
 		ignoreHTTPSErrors: true,
+		
 	});
 	const page = await context.newPage();
 	if (url) await page.goto(url);
