@@ -4,8 +4,8 @@ WORKDIR /usr/src/app
 FROM base AS install
 COPY package.json bun.lock .
 RUN bun install --frozen-lockfile
-RUN bun run playwright install chromium
-RUN bun run playwright install-deps chromium
+RUN bun run playwright install chromium chromium-headless-shell
+RUN bun run playwright install-deps chromium chromium-headless-shell
 
 FROM install AS copy
 COPY . .
