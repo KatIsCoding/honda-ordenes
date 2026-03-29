@@ -55,15 +55,21 @@ export class TaskManager {
 			return existing;
 		}
 
+		// Preserve order statuses from a previous incomplete run
+		const prevOrders = existing?.orders;
+
 		const task: Task = {
 			facturaId,
 			status: "queued",
-			orders: images.map((img) => ({
-				orderId: img.id,
-				numeroOrden: img.numeroOrden,
-				status: "idle",
-			})),
-			createdAt: Date.now(),
+			orders: images.map((img) => {
+				const prev = prevOrders?.find((o) => o.orderId === img.id);
+				return {
+					orderId: img.id,
+					numeroOrden: img.numeroOrden,
+					status: prev?.status === "complete" ? "complete" as const : "idle" as const,
+				};
+			}),
+			createdAt: existing?.createdAt ?? Date.now(),
 		};
 
 		this.tasks.set(facturaId, task);
@@ -110,6 +116,14 @@ export class TaskManager {
 			this.abortControllers.set(queued.facturaId, controller);
 
 			task.status = "running";
+
+			// If all orders are already complete, skip straight to done
+			if (task.orders.every((o) => o.status === "complete")) {
+				task.status = "done";
+				this.storage.SaveTask(task);
+				continue;
+			}
+
 			this.storage.SaveTask(task);
 
 			let browserCtx: Awaited<ReturnType<typeof launchBrowser>> | undefined;
@@ -121,6 +135,10 @@ export class TaskManager {
 					if (controller.signal.aborted) break;
 
 					const order = task.orders.find((o) => o.orderId === img.id);
+
+					// Skip already completed orders from a previous partial run
+					if (order?.status === "complete") continue;
+
 					if (order) order.status = "processing";
 
 					try {
