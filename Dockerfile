@@ -13,6 +13,7 @@ COPY . .
 
 FROM copy AS execution
 RUN mkdir -p /usr/src/app/data /usr/src/app/uploads && chown bun:bun /usr/src/app/data /usr/src/app/uploads
+RUN bun run build
 USER bun
 EXPOSE 3000/tcp
 ENV NODE_ENV=production
