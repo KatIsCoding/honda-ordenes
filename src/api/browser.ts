@@ -42,6 +42,15 @@ export async function executeOrder(
 
 	await page.waitForLoadState("networkidle");
 
+	// Skip upload if the same file is already attached to this order
+	const existingFile = await page.locator("#f04_0001").inputValue().catch(() => "");
+	const imageFileName = imagePath.split("/").pop() ?? "";
+	if (existingFile && existingFile === imageFileName) {
+		console.info("Image for order ", orderNumber, "already existed, early exit")
+		await page.close();
+		return;
+	}
+
 	await page.locator("#P36_FOTO_input").setInputFiles(imagePath);
 
 	await page.waitForLoadState("networkidle");
