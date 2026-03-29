@@ -1,11 +1,15 @@
 import { Database } from "bun:sqlite";
 import { join } from "path";
 import type { Factura, ImageEntry } from "@/types";
+import type { Task, TaskOrderStatus } from "./tasks";
 
 export interface StorageAdapter {
 	SaveInvoice(invoice: Factura): Promise<void>;
 	GetInvoices(): Promise<Array<Factura>>;
 	DeleteInvoice(invoiceID: string): Promise<void>;
+	SaveTask(task: Task): void;
+	GetTasks(): Task[];
+	DeleteTask(facturaId: string): void;
 }
 
 const DB_PATH = join(import.meta.dir, "..", "..","/data", "data.db");
@@ -34,6 +38,15 @@ export class SQLiteStorage implements StorageAdapter {
 				numero_orden TEXT NOT NULL,
 				preview_url TEXT NOT NULL,
 				FOREIGN KEY (numero_factura) REFERENCES invoices(numero_factura) ON DELETE CASCADE
+			)
+		`);
+
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS tasks (
+				factura_id TEXT PRIMARY KEY,
+				status TEXT NOT NULL,
+				orders TEXT NOT NULL,
+				created_at INTEGER NOT NULL
 			)
 		`);
 	}
@@ -111,5 +124,34 @@ export class SQLiteStorage implements StorageAdapter {
 			"\ndeletedInvoices\n",
 			deletedInvoice,
 		);
+	}
+
+	SaveTask(task: Task): void {
+		this.db.run(
+			"INSERT OR REPLACE INTO tasks (factura_id, status, orders, created_at) VALUES (?, ?, ?, ?)",
+			[task.facturaId, task.status, JSON.stringify(task.orders), task.createdAt],
+		);
+	}
+
+	GetTasks(): Task[] {
+		const rows = this.db
+			.query("SELECT factura_id, status, orders, created_at FROM tasks ORDER BY created_at DESC")
+			.all() as Array<{
+				factura_id: string;
+				status: string;
+				orders: string;
+				created_at: number;
+			}>;
+
+		return rows.map((row) => ({
+			facturaId: row.factura_id,
+			status: row.status as Task["status"],
+			orders: JSON.parse(row.orders) as Task["orders"],
+			createdAt: row.created_at,
+		}));
+	}
+
+	DeleteTask(facturaId: string): void {
+		this.db.run("DELETE FROM tasks WHERE factura_id = ?", [facturaId]);
 	}
 }

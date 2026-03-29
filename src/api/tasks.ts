@@ -1,4 +1,5 @@
 import { launchBrowser, executeOrder } from "./browser";
+import type { SQLiteStorage } from "./storage";
 
 export type OrderStatus = "idle" | "processing" | "complete" | "error";
 
@@ -21,11 +22,20 @@ interface QueuedTask {
 	images: { id: string; numeroOrden: string; imagePath: string }[];
 }
 
-class TaskManager {
+export class TaskManager {
 	private tasks = new Map<string, Task>();
 	private queue: QueuedTask[] = [];
 	private processing = false;
 	private abortControllers = new Map<string, AbortController>();
+	private storage: SQLiteStorage;
+
+	constructor(storage: SQLiteStorage) {
+		this.storage = storage;
+		// Load persisted tasks from DB
+		for (const task of storage.GetTasks()) {
+			this.tasks.set(task.facturaId, task);
+		}
+	}
 
 	getAll(): Task[] {
 		return Array.from(this.tasks.values());
@@ -57,6 +67,7 @@ class TaskManager {
 		};
 
 		this.tasks.set(facturaId, task);
+		this.storage.SaveTask(task);
 		this.queue.push({ facturaId, images });
 		this.processQueue();
 		return task;
@@ -69,6 +80,7 @@ class TaskManager {
 		if (task.status === "queued") {
 			task.status = "cancelled";
 			this.queue = this.queue.filter((q) => q.facturaId !== facturaId);
+			this.storage.SaveTask(task);
 			return true;
 		}
 
@@ -78,6 +90,7 @@ class TaskManager {
 				controller.abort();
 			}
 			task.status = "cancelled";
+			this.storage.SaveTask(task);
 			return true;
 		}
 
@@ -97,6 +110,7 @@ class TaskManager {
 			this.abortControllers.set(queued.facturaId, controller);
 
 			task.status = "running";
+			this.storage.SaveTask(task);
 
 			let browserCtx: Awaited<ReturnType<typeof launchBrowser>> | undefined;
 			try {
@@ -119,6 +133,9 @@ class TaskManager {
 						}
 						console.error("Task order error:", err);
 					}
+
+					// Persist after each order completes
+					this.storage.SaveTask(task);
 				}
 
 				if (task.status === "running") {
@@ -131,6 +148,7 @@ class TaskManager {
 				}
 			} finally {
 				this.abortControllers.delete(queued.facturaId);
+				this.storage.SaveTask(task);
 				await browserCtx?.browser.close().catch(() => {});
 			}
 		}
@@ -138,5 +156,3 @@ class TaskManager {
 		this.processing = false;
 	}
 }
-
-export const taskManager = new TaskManager();

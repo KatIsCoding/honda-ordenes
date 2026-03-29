@@ -3,7 +3,7 @@ import { join } from "path";
 import { mkdir } from "fs/promises";
 import index from "./index.html";
 import { SQLiteStorage } from "./api/storage";
-import { taskManager } from "./api/tasks";
+import { TaskManager } from "./api/tasks";
 
 const UPLOADS_DIR = join(import.meta.dir, "..", "uploads");
 
@@ -11,6 +11,7 @@ const UPLOADS_DIR = join(import.meta.dir, "..", "uploads");
 await mkdir(UPLOADS_DIR, { recursive: true });
 
 const storage = new SQLiteStorage();
+const taskManager = new TaskManager(storage);
 
 // ─── Auth ───
 const AUTH_PASSWORD = process.env.AUTH_PASSWORD || "honda123";
