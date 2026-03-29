@@ -239,6 +239,7 @@ const server = serve({
 							send("done", { numeroFactura });
 						} catch (err) {
 							const message = err instanceof Error ? err.message : String(err);
+							console.error("Error browser exec found", message)
 							send("error", { message: `Browser launch failed: ${message}` });
 						} finally {
 							resolveQueue();
