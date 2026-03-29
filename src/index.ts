@@ -3,7 +3,7 @@ import { join } from "path";
 import { mkdir } from "fs/promises";
 import index from "./index.html";
 import { SQLiteStorage } from "./api/storage";
-import { launchBrowser, executeOrder } from "./api/browser";
+import { taskManager } from "./api/tasks";
 
 const UPLOADS_DIR = join(import.meta.dir, "..", "uploads");
 
@@ -74,8 +74,7 @@ function checkLoginRateLimit(req: Request): Response | null {
 	return null;
 }
 
-// ─── Execution Queue ───
-let executionQueue = Promise.resolve();
+// ─── Task Manager (imported) ───
 
 function checkAuth(req: Request): Response | null {
 	if (getAuthCookie(req) !== VALID_TOKEN) {
@@ -163,8 +162,16 @@ const server = serve({
 			},
 		},
 
-		"/api/invoice/execute/:id": {
+		"/api/tasks": {
 			async GET(req) {
+				const denied = checkAuth(req);
+				if (denied) return denied;
+				return Response.json(taskManager.getAll());
+			},
+		},
+
+		"/api/tasks/:id": {
+			async POST(req) {
 				const denied = checkAuth(req);
 				if (denied) return denied;
 				const numeroFactura = decodeURIComponent(req.params.id);
@@ -174,88 +181,28 @@ const server = serve({
 					return new Response("Not found", { status: 404 });
 				}
 
-				const stream = new ReadableStream({
-					async start(controller) {
-						const encoder = new TextEncoder();
-						const send = (event: string, data: object) => {
-							controller.enqueue(
-								encoder.encode(
-									`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
-								),
-							);
-						};
-
-						// Wait for our turn in the queue
-						let resolveQueue!: () => void;
-						const myTurn = executionQueue;
-						executionQueue = new Promise((resolve) => {
-							resolveQueue = resolve;
+				// Resolve image paths
+				const images = [];
+				for (const img of invoice.images) {
+					const imagePath = await resolveImagePath(img.id);
+					if (imagePath) {
+						images.push({
+							id: img.id,
+							numeroOrden: img.numeroOrden,
+							imagePath,
 						});
+					}
+				}
 
-						send("queued", { numeroFactura });
-						await myTurn; // Queued immediately, but wait for its turn
-
-						send("start", { numeroFactura, total: invoice.images.length });
-
-						let browserCtx;
-						try {
-							const { context, browser } = await launchBrowser();
-							browserCtx = { context, browser };
-
-							for (const img of invoice.images) {
-								send("processing", {
-									orderId: img.id,
-									numeroOrden: img.numeroOrden,
-								});
-
-								try {
-									const imagePath = await resolveImagePath(img.id);
-									if (!imagePath) {
-										send("error", {
-											orderId: img.id,
-											numeroOrden: img.numeroOrden,
-											message: "Image file not found",
-										});
-										continue;
-									}
-
-									await executeOrder(img.numeroOrden, context, imagePath);
-									send("complete", {
-										orderId: img.id,
-										numeroOrden: img.numeroOrden,
-									});
-								} catch (err) {
-									const message =
-										err instanceof Error ? err.message : String(err);
-									console.error("Task encountered an error\n", message);
-									send("error", {
-										orderId: img.id,
-										numeroOrden: img.numeroOrden,
-										message,
-									});
-								}
-							}
-
-							send("done", { numeroFactura });
-						} catch (err) {
-							const message = err instanceof Error ? err.message : String(err);
-							console.error("Error browser exec found", message)
-							send("error", { message: `Browser launch failed: ${message}` });
-						} finally {
-							resolveQueue();
-							await browserCtx?.browser.close().catch(() => {});
-							controller.close();
-						}
-					},
-				});
-
-				return new Response(stream, {
-					headers: {
-						"Content-Type": "text/event-stream",
-						"Cache-Control": "no-cache",
-						Connection: "keep-alive",
-					},
-				});
+				const task = taskManager.create(numeroFactura, images);
+				return Response.json(task);
+			},
+			async DELETE(req) {
+				const denied = checkAuth(req);
+				if (denied) return denied;
+				const facturaId = decodeURIComponent(req.params.id);
+				const stopped = taskManager.stop(facturaId);
+				return Response.json({ ok: stopped });
 			},
 		},
 

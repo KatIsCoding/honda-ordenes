@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   Plus,
   FileText,
@@ -37,6 +37,63 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
   const [executing, setExecuting] = useState<
     Record<string, { running: boolean; queued: boolean; statuses: Record<string, OrderStatus> }>
   >({});
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Poll task status from backend
+  const pollTasks = useCallback(async () => {
+    try {
+      const res = await fetch("/api/tasks");
+      if (!res.ok) return;
+      const tasks: {
+        facturaId: string;
+        status: "queued" | "running" | "done" | "cancelled";
+        orders: { orderId: string; numeroOrden: string; status: OrderStatus; error?: string }[];
+      }[] = await res.json();
+
+      setExecuting((prev) => {
+        const next: typeof prev = {};
+        for (const task of tasks) {
+          const statuses: Record<string, OrderStatus> = {};
+          for (const order of task.orders) {
+            statuses[order.orderId] = order.status;
+          }
+          next[task.facturaId] = {
+            running: task.status === "queued" || task.status === "running",
+            queued: task.status === "queued",
+            statuses,
+          };
+        }
+        return next;
+      });
+
+      // Stop polling if no active tasks
+      const hasActive = tasks.some((t) => t.status === "queued" || t.status === "running");
+      if (!hasActive && pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    } catch {}
+  }, []);
+
+  const startPolling = useCallback(() => {
+    if (pollingRef.current) return;
+    pollingRef.current = setInterval(pollTasks, 1500);
+  }, [pollTasks]);
+
+  // On mount, check for existing tasks
+  useEffect(() => {
+    pollTasks().then(() => {
+      // If there are active tasks, start polling
+      setExecuting((prev) => {
+        const hasActive = Object.values(prev).some((e) => e.running);
+        if (hasActive) startPolling();
+        return prev;
+      });
+    });
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, [pollTasks, startPolling]);
 
   const toggle = (id: string) => {
     setExpandedIds((prev) => {
@@ -47,10 +104,10 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
     });
   };
 
-  const executeFactura = useCallback((factura: Factura) => {
+  const executeFactura = useCallback(async (factura: Factura) => {
     const numFactura = factura.numeroFactura;
 
-    // Initialize all orders as idle
+    // Initialize optimistically
     const initialStatuses: Record<string, OrderStatus> = {};
     for (const img of factura.images) {
       initialStatuses[img.id] = "idle";
@@ -60,57 +117,14 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
       [numFactura]: { running: true, queued: true, statuses: initialStatuses },
     }));
 
-    // Expand the factura so user sees progress
     setExpandedIds((prev) => new Set([...prev, numFactura]));
 
-    const eventSource = new EventSource(
-      `/api/invoice/execute/${encodeURIComponent(numFactura)}`
-    );
+    try {
+      await fetch(`/api/tasks/${encodeURIComponent(numFactura)}`, { method: "POST" });
+    } catch {}
 
-    const defaults = { running: true, queued: true, statuses: initialStatuses };
-    const update = (
-      patch: Partial<typeof defaults> | ((prev: typeof defaults) => Partial<typeof defaults>)
-    ) => {
-      setExecuting((prev) => {
-        const current = prev[numFactura] ?? defaults;
-        const resolved = typeof patch === "function" ? patch(current) : patch;
-        return { ...prev, [numFactura]: { ...current, ...resolved } };
-      });
-    };
-
-    eventSource.addEventListener("start", () => {
-      update({ queued: false });
-    });
-
-    eventSource.addEventListener("processing", (e) => {
-      const data = JSON.parse(e.data);
-      update((cur) => ({ statuses: { ...cur.statuses, [data.orderId]: "processing" } }));
-    });
-
-    eventSource.addEventListener("complete", (e) => {
-      const data = JSON.parse(e.data);
-      update((cur) => ({ statuses: { ...cur.statuses, [data.orderId]: "complete" } }));
-    });
-
-    eventSource.addEventListener("error", (e) => {
-      try {
-        const data = JSON.parse((e as MessageEvent).data);
-        if (data.orderId) {
-          update((cur) => ({ statuses: { ...cur.statuses, [data.orderId]: "error" } }));
-        }
-      } catch {}
-    });
-
-    eventSource.addEventListener("done", () => {
-      update({ running: false });
-      eventSource.close();
-    });
-
-    eventSource.onerror = () => {
-      update({ running: false });
-      eventSource.close();
-    };
-  }, []);
+    startPolling();
+  }, [startPolling]);
 
   const filtered = facturas.filter(
     (f) =>
