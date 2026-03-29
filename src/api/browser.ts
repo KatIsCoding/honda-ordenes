@@ -39,12 +39,12 @@ export async function executeOrder(
 	await page.type("#P101_PASSWORD", "VA1");
 	await page.click("#P101_LOGIN");
 
-	await page.waitForLoadState("networkidle");
-	await page.waitForLoadState("domcontentloaded");
+	// await page.waitForLoadState("networkidle");
+	// await page.waitForLoadState("domcontentloaded");
 
 	await page.waitForSelector("#P36_FOTO_input");
 
-	await page.waitForLoadState("networkidle");
+	// await page.waitForLoadState("networkidle");
 
 	// Skip upload if the same file is already attached to this order
 	const existingFile = await page.locator("#f04_0001").inputValue().catch(() => "");
@@ -57,13 +57,13 @@ export async function executeOrder(
 
 	await page.locator("#P36_FOTO_input").setInputFiles(imagePath);
 
-	await page.waitForLoadState("networkidle");
+	// await page.waitForLoadState("networkidle");
 
 	await page.evaluate("apex.submit({request: 'GUARDAR'})");
 
-	await page.waitForLoadState("networkidle");
+	// await page.waitForLoadState("networkidle");
 
-	await page.waitForLoadState("domcontentloaded");
+	// await page.waitForLoadState("domcontentloaded");
 
 	await page.waitForSelector(
 		"#body > table > tbody > tr > td.tbl-main > div > div > div.rc-body > div > div.rc-content-main > div.sErrorText > p > button",
@@ -71,9 +71,9 @@ export async function executeOrder(
 
 	await page.goBack();
 
-	await page.waitForLoadState("networkidle");
+	// await page.waitForLoadState("networkidle");
 
-	await page.waitForLoadState("domcontentloaded");
+	// await page.waitForLoadState("domcontentloaded");
 
 	await page.waitForSelector("#P36_FOTO_input");
 
