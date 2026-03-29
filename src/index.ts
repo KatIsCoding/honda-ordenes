@@ -42,7 +42,7 @@ function getAuthCookie(req: Request): string | null {
 
 // ─── Rate Limit ───
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-const MAX_LOGIN_ATTEMPTS = 5;
+const MAX_LOGIN_ATTEMPTS = 10;
 const LOGIN_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
 function getClientIP(req: Request): string {
