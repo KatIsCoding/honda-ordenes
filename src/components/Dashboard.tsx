@@ -9,6 +9,7 @@ import {
   X,
   Trash2,
   Play,
+  Square,
   Loader2,
   Check,
   AlertTriangle,
@@ -125,6 +126,13 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
 
     startPolling();
   }, [startPolling]);
+
+  const stopFactura = useCallback(async (numFactura: string) => {
+    try {
+      await fetch(`/api/tasks/${encodeURIComponent(numFactura)}`, { method: "DELETE" });
+    } catch {}
+    pollTasks();
+  }, [pollTasks]);
 
   const filtered = facturas.filter(
     (f) =>
@@ -375,13 +383,17 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
                     >
                       {factura.numeroFactura}
                     </p>
-                    {done && (
+                    {queued ? (
+                      <Clock size={14} style={{ color: "rgb(147, 130, 220)", flexShrink: 0 }} />
+                    ) : running ? (
+                      <Loader2 size={14} className="animate-spin" style={{ color: "var(--amber)", flexShrink: 0 }} />
+                    ) : done ? (
                       hasErrors ? (
                         <AlertTriangle size={14} style={{ color: "var(--rust)", flexShrink: 0 }} />
                       ) : (
                         <Check size={14} style={{ color: "var(--success)", flexShrink: 0 }} />
                       )
-                    )}
+                    ) : null}
                   </div>
                   <p
                     style={{
@@ -439,14 +451,18 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
                   )}
                 </div>
 
-                {/* Ejecutar button */}
+                {/* Start / Stop button */}
                 <div
                   role="button"
                   tabIndex={0}
-                  title={queued ? "En cola..." : running ? "Ejecutando..." : "Ejecutar"}
+                  title={running || queued ? "Detener" : "Ejecutar"}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (!running && !queued) executeFactura(factura);
+                    if (running || queued) {
+                      stopFactura(factura.numeroFactura);
+                    } else {
+                      executeFactura(factura);
+                    }
                   }}
                   style={{
                     width: 32,
@@ -455,38 +471,38 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
                     alignItems: "center",
                     justifyContent: "center",
                     borderRadius: 6,
-                    background: queued
-                      ? "rgba(147, 130, 220, 0.15)"
-                      : running
-                        ? "var(--amber-glow)"
-                        : "transparent",
+                    background: running || queued
+                      ? "rgba(194, 65, 12, 0.15)"
+                      : "transparent",
                     border: "none",
-                    color: queued
-                      ? "rgb(147, 130, 220)"
-                      : running
-                        ? "var(--amber)"
-                        : "var(--chalk-muted)",
-                    cursor: running || queued ? "default" : "pointer",
+                    color: running || queued
+                      ? "var(--rust)"
+                      : "var(--chalk-muted)",
+                    cursor: "pointer",
                     flexShrink: 0,
                     transition: "color 0.15s, background 0.15s",
                   }}
                   onMouseEnter={(e) => {
-                    if (!running && !queued) {
+                    if (running || queued) {
+                      e.currentTarget.style.color = "var(--rust)";
+                      e.currentTarget.style.background = "rgba(194, 65, 12, 0.25)";
+                    } else {
                       e.currentTarget.style.color = "var(--amber)";
                       e.currentTarget.style.background = "var(--amber-glow)";
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (!running && !queued) {
+                    if (running || queued) {
+                      e.currentTarget.style.color = "var(--rust)";
+                      e.currentTarget.style.background = "rgba(194, 65, 12, 0.15)";
+                    } else {
                       e.currentTarget.style.color = "var(--chalk-muted)";
                       e.currentTarget.style.background = "transparent";
                     }
                   }}
                 >
-                  {queued ? (
-                    <Clock size={15} />
-                  ) : running ? (
-                    <Loader2 size={15} className="animate-spin" />
+                  {running || queued ? (
+                    <Square size={13} />
                   ) : (
                     <Play size={15} />
                   )}
