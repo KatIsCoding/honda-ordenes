@@ -25,7 +25,7 @@ export function AssignView({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
 
-  const currentId = imageIds[currentIndex];
+  const currentId = imageIds[currentIndex]!;
   const total = imageIds.length;
   const assignedCount = Object.keys(assignments).length;
   const allAssigned = assignedCount === total;
@@ -49,12 +49,12 @@ export function AssignView({
   const goTo = (index: number) => {
     if (index >= 0 && index < total) {
       setCurrentIndex(index);
-      setInputValue(assignments[imageIds[index]] || "");
+      setInputValue(assignments[imageIds[index]!] || "");
     }
   };
 
   const removeImage = (index: number) => {
-    const id = imageIds[index];
+    const id = imageIds[index]!;
     // Clean up assignment for this image
     setAssignments((prev) => {
       const next = { ...prev };

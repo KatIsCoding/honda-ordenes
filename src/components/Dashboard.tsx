@@ -12,6 +12,7 @@ import {
   Loader2,
   Check,
   AlertTriangle,
+  Clock,
 } from "lucide-react";
 import { ImageViewer } from "./ImageViewer";
 import type { Factura } from "../types";
@@ -32,9 +33,9 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
-  // Execution state: facturaId -> { running, orderStatuses }
+  // Execution state: facturaId -> { running, queued, orderStatuses }
   const [executing, setExecuting] = useState<
-    Record<string, { running: boolean; statuses: Record<string, OrderStatus> }>
+    Record<string, { running: boolean; queued: boolean; statuses: Record<string, OrderStatus> }>
   >({});
 
   const toggle = (id: string) => {
@@ -56,7 +57,7 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
     }
     setExecuting((prev) => ({
       ...prev,
-      [numFactura]: { running: true, statuses: initialStatuses },
+      [numFactura]: { running: true, queued: true, statuses: initialStatuses },
     }));
 
     // Expand the factura so user sees progress
@@ -66,71 +67,47 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
       `/api/invoice/execute/${encodeURIComponent(numFactura)}`
     );
 
+    const defaults = { running: true, queued: true, statuses: initialStatuses };
+    const update = (
+      patch: Partial<typeof defaults> | ((prev: typeof defaults) => Partial<typeof defaults>)
+    ) => {
+      setExecuting((prev) => {
+        const current = prev[numFactura] ?? defaults;
+        const resolved = typeof patch === "function" ? patch(current) : patch;
+        return { ...prev, [numFactura]: { ...current, ...resolved } };
+      });
+    };
+
+    eventSource.addEventListener("start", () => {
+      update({ queued: false });
+    });
+
     eventSource.addEventListener("processing", (e) => {
       const data = JSON.parse(e.data);
-      setExecuting((prev) => ({
-        ...prev,
-        [numFactura]: {
-          ...prev[numFactura],
-          statuses: {
-            ...prev[numFactura]?.statuses,
-            [data.orderId]: "processing",
-          },
-        },
-      }));
+      update((cur) => ({ statuses: { ...cur.statuses, [data.orderId]: "processing" } }));
     });
 
     eventSource.addEventListener("complete", (e) => {
       const data = JSON.parse(e.data);
-      setExecuting((prev) => ({
-        ...prev,
-        [numFactura]: {
-          ...prev[numFactura],
-          statuses: {
-            ...prev[numFactura]?.statuses,
-            [data.orderId]: "complete",
-          },
-        },
-      }));
+      update((cur) => ({ statuses: { ...cur.statuses, [data.orderId]: "complete" } }));
     });
 
     eventSource.addEventListener("error", (e) => {
       try {
         const data = JSON.parse((e as MessageEvent).data);
         if (data.orderId) {
-          setExecuting((prev) => ({
-            ...prev,
-            [numFactura]: {
-              ...prev[numFactura],
-              statuses: {
-                ...prev[numFactura]?.statuses,
-                [data.orderId]: "error",
-              },
-            },
-          }));
+          update((cur) => ({ statuses: { ...cur.statuses, [data.orderId]: "error" } }));
         }
       } catch {}
     });
 
     eventSource.addEventListener("done", () => {
-      setExecuting((prev) => ({
-        ...prev,
-        [numFactura]: {
-          ...prev[numFactura],
-          running: false,
-        },
-      }));
+      update({ running: false });
       eventSource.close();
     });
 
     eventSource.onerror = () => {
-      setExecuting((prev) => ({
-        ...prev,
-        [numFactura]: {
-          ...prev[numFactura],
-          running: false,
-        },
-      }));
+      update({ running: false });
       eventSource.close();
     };
   }, []);
@@ -151,6 +128,10 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
 
   const isFacturaRunning = (facturaId: string): boolean => {
     return executing[facturaId]?.running || false;
+  };
+
+  const isFacturaQueued = (facturaId: string): boolean => {
+    return executing[facturaId]?.queued || false;
   };
 
   const isFacturaDone = (facturaId: string): boolean => {
@@ -306,6 +287,7 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
         {filtered.map((factura, fi) => {
           const isExpanded = expandedIds.has(factura.numeroFactura);
           const running = isFacturaRunning(factura.numeroFactura);
+          const queued = isFacturaQueued(factura.numeroFactura);
           const done = isFacturaDone(factura.numeroFactura);
           return (
             <div
@@ -314,7 +296,7 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
               style={{
                 background: "var(--paper)",
                 borderRadius: 12,
-                border: `1px solid ${running ? "var(--amber)" : "var(--paper-lighter)"}`,
+                border: `1px solid ${queued ? "rgb(147, 130, 220)" : running ? "var(--amber)" : "var(--paper-lighter)"}`,
                 overflow: "hidden",
                 animationDelay: `${fi * 0.06}s`,
                 opacity: 0,
@@ -431,7 +413,7 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
                 <div
                   role="button"
                   tabIndex={0}
-                  title={running ? "Ejecutando..." : done ? "Completado" : "Ejecutar"}
+                  title={queued ? "En cola..." : running ? "Ejecutando..." : done ? "Completado" : "Ejecutar"}
                   onClick={(e) => {
                     e.stopPropagation();
                     if (!running && !done) executeFactura(factura);
@@ -443,35 +425,41 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
                     alignItems: "center",
                     justifyContent: "center",
                     borderRadius: 6,
-                    background: running
-                      ? "var(--amber-glow)"
-                      : done
-                        ? "rgba(101, 163, 13, 0.15)"
-                        : "transparent",
+                    background: queued
+                      ? "rgba(147, 130, 220, 0.15)"
+                      : running
+                        ? "var(--amber-glow)"
+                        : done
+                          ? "rgba(101, 163, 13, 0.15)"
+                          : "transparent",
                     border: "none",
-                    color: running
-                      ? "var(--amber)"
-                      : done
-                        ? "var(--success)"
-                        : "var(--chalk-muted)",
+                    color: queued
+                      ? "rgb(147, 130, 220)"
+                      : running
+                        ? "var(--amber)"
+                        : done
+                          ? "var(--success)"
+                          : "var(--chalk-muted)",
                     cursor: running || done ? "default" : "pointer",
                     flexShrink: 0,
                     transition: "color 0.15s, background 0.15s",
                   }}
                   onMouseEnter={(e) => {
-                    if (!running && !done) {
+                    if (!running && !done && !queued) {
                       e.currentTarget.style.color = "var(--amber)";
                       e.currentTarget.style.background = "var(--amber-glow)";
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (!running && !done) {
+                    if (!running && !done && !queued) {
                       e.currentTarget.style.color = "var(--chalk-muted)";
                       e.currentTarget.style.background = "transparent";
                     }
                   }}
                 >
-                  {running ? (
+                  {queued ? (
+                    <Clock size={15} />
+                  ) : running ? (
                     <Loader2 size={15} className="animate-spin" />
                   ) : done ? (
                     <Check size={15} />

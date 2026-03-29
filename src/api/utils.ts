@@ -57,7 +57,7 @@ export function parseApexParam(pValue: string): ApexParams {
 	let raw = pValue.trim();
 	const urlMatch = raw.match(/[?&]p=([^&]+)/i);
 	if (urlMatch) {
-		raw = decodeURIComponent(urlMatch[1]);
+		raw = decodeURIComponent(urlMatch[1]!);
 	}
 
 	// Split on colons — there must always be exactly 9 segments (some may be empty)
@@ -70,15 +70,15 @@ export function parseApexParam(pValue: string): ApexParams {
 	const segments = parts.slice(0, SEGMENT_COUNT);
 
 	const [
-		appId,
-		pageId,
-		session,
-		request,
-		debug,
-		clearCache,
-		itemNames,
-		itemValues,
-		printerFriendly,
+		appId = "",
+		pageId = "",
+		session = "",
+		request = "",
+		debug = "",
+		clearCache = "",
+		itemNames = "",
+		itemValues = "",
+		printerFriendly = "",
 	] = segments;
 
 	return {

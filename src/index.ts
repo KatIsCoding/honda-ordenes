@@ -37,7 +37,7 @@ const VALID_TOKEN = await makeToken();
 function getAuthCookie(req: Request): string | null {
 	const cookie = req.headers.get("cookie") || "";
 	const match = cookie.match(/(?:^|;\s*)auth=([^\s;]+)/);
-	return match ? match[1] : null;
+	return match ? match[1] ?? null : null;
 }
 
 // ─── Rate Limit ───
@@ -73,6 +73,9 @@ function checkLoginRateLimit(req: Request): Response | null {
 
 	return null;
 }
+
+// ─── Execution Queue ───
+let executionQueue = Promise.resolve();
 
 function checkAuth(req: Request): Response | null {
 	if (getAuthCookie(req) !== VALID_TOKEN) {
@@ -182,6 +185,16 @@ const server = serve({
 							);
 						};
 
+						// Wait for our turn in the queue
+						let resolveQueue!: () => void;
+						const myTurn = executionQueue;
+						executionQueue = new Promise((resolve) => {
+							resolveQueue = resolve;
+						});
+
+						send("queued", { numeroFactura });
+						await myTurn; // Queued immediately, but wait for its turn
+
 						send("start", { numeroFactura, total: invoice.images.length });
 
 						let browserCtx;
@@ -228,6 +241,7 @@ const server = serve({
 							const message = err instanceof Error ? err.message : String(err);
 							send("error", { message: `Browser launch failed: ${message}` });
 						} finally {
+							resolveQueue();
 							await browserCtx?.browser.close().catch(() => {});
 							controller.close();
 						}
