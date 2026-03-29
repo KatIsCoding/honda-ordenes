@@ -36,7 +36,8 @@ export async function executeOrder(
 	await page.type("#P101_PASSWORD", "VA1");
 	await page.click("#P101_LOGIN");
 
-	await page.waitForNavigation();
+	await page.waitForLoadState("networkidle");
+	await page.waitForLoadState("domcontentloaded");
 
 	await page.waitForSelector("#P36_FOTO_input");
 
