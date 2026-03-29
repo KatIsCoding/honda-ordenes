@@ -1,12 +1,12 @@
 FROM oven/bun:1 AS base
 WORKDIR /usr/src/app
+# USER bun
 
 FROM base AS install
-USER bun
 COPY package.json bun.lock .
 RUN bun install --frozen-lockfile
-RUN bun run playwright install-deps
-RUN bun run playwright install
+RUN bun run playwright install chromium chromium-headless-shell
+RUN bun run playwright install-deps chromium chromium-headless-shell
 
 FROM install AS copy
 COPY . .
