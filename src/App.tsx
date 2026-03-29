@@ -2,26 +2,43 @@ import React, { useEffect, useState } from "react";
 import { UploadView } from "./components/UploadView";
 import { AssignView } from "./components/AssignView";
 import { Dashboard } from "./components/Dashboard";
+import { LoginPage } from "./components/LoginPage";
 import { Navbar } from "./components/Navbar";
 import type { AppView, Factura } from "./types";
 import "./index.css";
 
 export function App() {
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [view, setView] = useState<AppView>("dashboard");
   const [facturas, setFacturas] = useState<Factura[]>([]);
+  const [pendingFactura, setPendingFactura] = useState<string>("");
+  const [pendingImageIds, setPendingImageIds] = useState<string[]>([]);
+  const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
 
-  // Load invoices from the server on mount
+  // Check auth on mount
   useEffect(() => {
+    fetch("/api/auth/check")
+      .then((res) => res.json())
+      .then((data) => setAuthenticated(data.authenticated))
+      .catch(() => setAuthenticated(false));
+  }, []);
+
+  // Load invoices once authenticated
+  useEffect(() => {
+    if (!authenticated) return;
     fetch("/api/invoices")
       .then((res) => res.json())
       .then((data) => setFacturas(data))
       .catch(console.error);
-  }, []);
+  }, [authenticated]);
 
-  // Upload state passed between steps
-  const [pendingFactura, setPendingFactura] = useState<string>("");
-  const [pendingImageIds, setPendingImageIds] = useState<string[]>([]);
-  const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
+  // Loading state
+  if (authenticated === null) return null;
+
+  // Show login page
+  if (!authenticated) {
+    return <LoginPage onSuccess={() => setAuthenticated(true)} />;
+  }
 
   const handleUploadNext = (
     numeroFactura: string,

@@ -12,6 +12,41 @@ await mkdir(UPLOADS_DIR, { recursive: true });
 
 const storage = new SQLiteStorage();
 
+// ─── Auth ───
+const AUTH_PASSWORD = process.env.AUTH_PASSWORD || "honda123";
+const AUTH_SECRET = process.env.AUTH_SECRET || crypto.randomUUID();
+
+async function makeToken(): Promise<string> {
+	const key = await crypto.subtle.importKey(
+		"raw",
+		new TextEncoder().encode(AUTH_SECRET),
+		{ name: "HMAC", hash: "SHA-256" },
+		false,
+		["sign"],
+	);
+	const sig = await crypto.subtle.sign(
+		"HMAC",
+		key,
+		new TextEncoder().encode("authenticated"),
+	);
+	return Buffer.from(sig).toString("hex");
+}
+
+const VALID_TOKEN = await makeToken();
+
+function getAuthCookie(req: Request): string | null {
+	const cookie = req.headers.get("cookie") || "";
+	const match = cookie.match(/(?:^|;\s*)auth=([^\s;]+)/);
+	return match ? match[1] : null;
+}
+
+function checkAuth(req: Request): Response | null {
+	if (getAuthCookie(req) !== VALID_TOKEN) {
+		return Response.redirect("/login", 302);
+	}
+	return null;
+}
+
 function extFromMime(mime: string): string {
 	const map: Record<string, string> = {
 		"image/jpeg": ".jpg",
@@ -35,10 +70,35 @@ async function resolveImagePath(imageId: string): Promise<string | null> {
 
 const server = serve({
 	routes: {
+		"/login": index,
 		"/*": index,
+
+		"/api/auth/login": {
+			async POST(req) {
+				const { password } = await req.json();
+				if (password !== AUTH_PASSWORD) {
+					return Response.json({ error: "Wrong password" }, { status: 401 });
+				}
+				return new Response(JSON.stringify({ ok: true }), {
+					headers: {
+						"Content-Type": "application/json",
+						"Set-Cookie": `auth=${VALID_TOKEN}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${2 * 24 * 60 * 60}`,
+					},
+				});
+			},
+		},
+
+		"/api/auth/check": {
+			GET(req) {
+				const authed = getAuthCookie(req) === VALID_TOKEN;
+				return Response.json({ authenticated: authed });
+			},
+		},
 
 		"/api/invoice/new": {
 			async POST(req) {
+				const denied = checkAuth(req);
+				if (denied) return denied;
 				const body = await req.json();
 				await storage.SaveInvoice(body);
 				return Response.json({ ok: true });
@@ -46,7 +106,9 @@ const server = serve({
 		},
 
 		"/api/invoices/:id": {
-			async DELETE(r) {
+			async DELETE(r: Request & { params: { id: string } }) {
+				const denied = checkAuth(r);
+				if (denied) return denied;
 				await storage.DeleteInvoice(r.params.id);
 				// TODO: Delete the images from disk too
 				return Response.json({ ok: true });
@@ -54,7 +116,9 @@ const server = serve({
 		},
 
 		"/api/invoices": {
-			async GET() {
+			async GET(req) {
+				const denied = checkAuth(req);
+				if (denied) return denied;
 				const invoices = await storage.GetInvoices();
 				return Response.json(invoices);
 			},
@@ -62,6 +126,8 @@ const server = serve({
 
 		"/api/invoice/execute/:id": {
 			async GET(req) {
+				const denied = checkAuth(req);
+				if (denied) return denied;
 				const numeroFactura = decodeURIComponent(req.params.id);
 				const invoices = await storage.GetInvoices();
 				const invoice = invoices.find((i) => i.numeroFactura === numeroFactura);
@@ -144,6 +210,8 @@ const server = serve({
 
 		"/api/upload": {
 			async POST(req) {
+				const denied = checkAuth(req);
+				if (denied) return denied;
 				const formData = await req.formData();
 				const files = formData.getAll("images");
 				const ids: string[] = [];
@@ -164,6 +232,8 @@ const server = serve({
 
 		"/api/image/:id": {
 			async GET(req) {
+				const denied = checkAuth(req);
+				if (denied) return denied;
 				// Find the file by UUID prefix (extension may vary)
 				const glob = new Bun.Glob(`${req.params.id}.*`);
 				for await (const match of glob.scan(UPLOADS_DIR)) {

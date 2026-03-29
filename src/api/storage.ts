@@ -8,7 +8,8 @@ export interface StorageAdapter {
 	DeleteInvoice(invoiceID: string): Promise<void>;
 }
 
-const DB_PATH = join(import.meta.dir, "..", "..", "data.db");
+const DB_PATH = join(import.meta.dir, "..", "..","/data", "data.db");
+console.log("Reading DB on path", DB_PATH)
 
 export class SQLiteStorage implements StorageAdapter {
 	private db: Database;
