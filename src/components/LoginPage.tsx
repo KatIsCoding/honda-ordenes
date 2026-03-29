@@ -18,7 +18,8 @@ export function LoginPage({ onSuccess }: { onSuccess: () => void }) {
       });
 
       if (!res.ok) {
-        setError("Contraseña incorrecta");
+        const data = await res.json();
+        setError(data.error || "Contraseña incorrecta");
         return;
       }
 

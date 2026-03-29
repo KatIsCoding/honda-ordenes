@@ -40,6 +40,40 @@ function getAuthCookie(req: Request): string | null {
 	return match ? match[1] : null;
 }
 
+// ─── Rate Limit ───
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_WINDOW_MS = 60 * 1000; // 1 minute
+
+function getClientIP(req: Request): string {
+	return (
+		req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+		req.headers.get("x-real-ip") ||
+		"unknown"
+	);
+}
+
+function checkLoginRateLimit(req: Request): Response | null {
+	const ip = getClientIP(req);
+	const now = Date.now();
+	const entry = loginAttempts.get(ip);
+
+	if (entry && now < entry.resetAt) {
+		if (entry.count >= MAX_LOGIN_ATTEMPTS) {
+			const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
+			return Response.json(
+				{ error: "Demasiados intentos. Intenta de nuevo en un momento." },
+				{ status: 429, headers: { "Retry-After": String(retryAfter) } },
+			);
+		}
+		entry.count++;
+	} else {
+		loginAttempts.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+	}
+
+	return null;
+}
+
 function checkAuth(req: Request): Response | null {
 	if (getAuthCookie(req) !== VALID_TOKEN) {
 		return Response.redirect("/login", 302);
@@ -75,6 +109,8 @@ const server = serve({
 
 		"/api/auth/login": {
 			async POST(req) {
+				const limited = checkLoginRateLimit(req);
+				if (limited) return limited;
 				const { password } = await req.json();
 				if (password !== AUTH_PASSWORD) {
 					return Response.json({ error: "Wrong password" }, { status: 401 });
