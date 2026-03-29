@@ -154,6 +154,12 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
     return !exec.running && Object.values(exec.statuses).every((s) => s === "complete" || s === "error");
   };
 
+  const facturaHasErrors = (facturaId: string): boolean => {
+    const exec = executing[facturaId];
+    if (!exec) return false;
+    return Object.values(exec.statuses).some((s) => s === "error");
+  };
+
   return (
     <div className="animate-fade-up" style={{ maxWidth: 960, margin: "0 auto" }}>
       {/* Header row */}
@@ -303,6 +309,7 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
           const running = isFacturaRunning(factura.numeroFactura);
           const queued = isFacturaQueued(factura.numeroFactura);
           const done = isFacturaDone(factura.numeroFactura);
+          const hasErrors = facturaHasErrors(factura.numeroFactura);
           return (
             <div
               key={factura.numeroFactura}
@@ -356,17 +363,26 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
                 </div>
 
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p
-                    style={{
-                      fontSize: 16,
-                      fontWeight: 600,
-                      fontFamily: "var(--font-mono)",
-                      color: "var(--chalk)",
-                      margin: 0,
-                    }}
-                  >
-                    {factura.numeroFactura}
-                  </p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <p
+                      style={{
+                        fontSize: 16,
+                        fontWeight: 600,
+                        fontFamily: "var(--font-mono)",
+                        color: "var(--chalk)",
+                        margin: 0,
+                      }}
+                    >
+                      {factura.numeroFactura}
+                    </p>
+                    {done && (
+                      hasErrors ? (
+                        <AlertTriangle size={14} style={{ color: "var(--rust)", flexShrink: 0 }} />
+                      ) : (
+                        <Check size={14} style={{ color: "var(--success)", flexShrink: 0 }} />
+                      )
+                    )}
+                  </div>
                   <p
                     style={{
                       fontSize: 12,
@@ -427,10 +443,10 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
                 <div
                   role="button"
                   tabIndex={0}
-                  title={queued ? "En cola..." : running ? "Ejecutando..." : done ? "Completado" : "Ejecutar"}
+                  title={queued ? "En cola..." : running ? "Ejecutando..." : "Ejecutar"}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (!running && !done) executeFactura(factura);
+                    if (!running && !queued) executeFactura(factura);
                   }}
                   style={{
                     width: 32,
@@ -443,29 +459,25 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
                       ? "rgba(147, 130, 220, 0.15)"
                       : running
                         ? "var(--amber-glow)"
-                        : done
-                          ? "rgba(101, 163, 13, 0.15)"
-                          : "transparent",
+                        : "transparent",
                     border: "none",
                     color: queued
                       ? "rgb(147, 130, 220)"
                       : running
                         ? "var(--amber)"
-                        : done
-                          ? "var(--success)"
-                          : "var(--chalk-muted)",
-                    cursor: running || done ? "default" : "pointer",
+                        : "var(--chalk-muted)",
+                    cursor: running || queued ? "default" : "pointer",
                     flexShrink: 0,
                     transition: "color 0.15s, background 0.15s",
                   }}
                   onMouseEnter={(e) => {
-                    if (!running && !done && !queued) {
+                    if (!running && !queued) {
                       e.currentTarget.style.color = "var(--amber)";
                       e.currentTarget.style.background = "var(--amber-glow)";
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (!running && !done && !queued) {
+                    if (!running && !queued) {
                       e.currentTarget.style.color = "var(--chalk-muted)";
                       e.currentTarget.style.background = "transparent";
                     }
@@ -475,8 +487,6 @@ export function Dashboard({ facturas, onNewUpload, onDeleteFactura }: DashboardP
                     <Clock size={15} />
                   ) : running ? (
                     <Loader2 size={15} className="animate-spin" />
-                  ) : done ? (
-                    <Check size={15} />
                   ) : (
                     <Play size={15} />
                   )}
