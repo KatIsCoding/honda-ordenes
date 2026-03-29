@@ -141,15 +141,21 @@ export class TaskManager {
 
 					if (order) order.status = "processing";
 
-					try {
-						await executeOrder(img.numeroOrden, context, img.imagePath);
-						if (order) order.status = "complete";
-					} catch (err) {
-						if (order) {
-							order.status = "error";
-							order.error = err instanceof Error ? err.message : String(err);
+					let lastErr: unknown;
+					for (let attempt = 1; attempt <= 3; attempt++) {
+						try {
+							await executeOrder(img.numeroOrden, context, img.imagePath);
+							if (order) order.status = "complete";
+							lastErr = undefined;
+							break;
+						} catch (err) {
+							lastErr = err;
+							console.error(`Task order error (attempt ${attempt}/3):`, err);
 						}
-						console.error("Task order error:", err);
+					}
+					if (lastErr && order) {
+						order.status = "error";
+						order.error = lastErr instanceof Error ? lastErr.message : String(lastErr);
 					}
 
 					// Persist after each order completes

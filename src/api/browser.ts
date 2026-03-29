@@ -26,6 +26,9 @@ export async function executeOrder(
 	imagePath: string,
 ) {
 	const page = await browser.newPage();
+	try {
+		
+	
 	await page.goto(
 		`https://sistemas.corp.cr:8443/ords/f?p=133:36:3927756649160:::36:P36_ORDEN:${orderNumber}`,
 	);
@@ -74,5 +77,7 @@ export async function executeOrder(
 
 	await page.waitForSelector("#P36_FOTO_input");
 
-	await page.close();
+	} finally {
+		await page.close()
+	}
 }
