@@ -29,12 +29,22 @@ export async function executeOrder(
 		console.debug(`[${orderNumber}] ${label} — ${Date.now() - since}ms`);
 
 	const page = await browser.newPage();
+	const imageFileName = imagePath.split("/").pop() ?? "";
+	const orderUrl = `https://sistemas.corp.cr:8443/ords/f?p=133:36:3927756649160:::36:P36_ORDEN:${orderNumber}`;
+
+	// Filenames of the photos APEX has stored for this order.
+	// This returns instantly (empty array) on orders without photos.
+	const attachedPhotos = () =>
+		page
+			.locator('input[name="f04"]')
+			.evaluateAll((elements) =>
+				elements.map((el) => (el as HTMLInputElement).value).filter(Boolean),
+			);
+
 	try {
 		let ts = Date.now();
 
-		await page.goto(
-			`https://sistemas.corp.cr:8443/ords/f?p=133:36:3927756649160:::36:P36_ORDEN:${orderNumber}`,
-		);
+		await page.goto(orderUrl);
 		t("goto", ts); ts = Date.now();
 
 		await page.waitForLoadState("networkidle");
@@ -46,20 +56,13 @@ export async function executeOrder(
 		t("login form submit", ts); ts = Date.now();
 
 		await page.waitForSelector("#P36_FOTO_input");
+		const orderPageUrl = page.url();
 		t("waitForSelector(#P36_FOTO_input) after login", ts); ts = Date.now();
 
-		// Skip upload if the same file is already attached to this order.
-		// #f04_0001 only exists when a photo is already attached, so check
-		// count() first: inputValue() on a missing locator would wait the
-		// full 30s action timeout on every fresh order.
-		const imageFileName = imagePath.split("/").pop() ?? "";
-		const existingFile =
-			(await page.locator("#f04_0001").count()) > 0
-				? await page.locator("#f04_0001").inputValue().catch(() => "")
-				: "";
-		t("existing file check", ts); ts = Date.now();
-
-		if (existingFile && existingFile === imageFileName) {
+		// Skip upload if the same file is already attached to this order
+		const existingPhotos = await attachedPhotos();
+		t("existing photo check", ts); ts = Date.now();
+		if (existingPhotos.includes(imageFileName)) {
 			console.info("Image for order ", orderNumber, "already existed, early exit");
 			return;
 		}
@@ -67,19 +70,32 @@ export async function executeOrder(
 		await page.locator("#P36_FOTO_input").setInputFiles(imagePath);
 		t("setInputFiles", ts); ts = Date.now();
 
-		await page.evaluate("apex.submit({request: 'GUARDAR'})");
+		await Promise.all([
+			page.waitForNavigation({ waitUntil: "load" }),
+			page.evaluate("apex.submit({request: 'GUARDAR'})"),
+		]);
 		t("apex.submit", ts); ts = Date.now();
 
-		await page.waitForSelector(
-			"#body > table > tbody > tr > td.tbl-main > div > div > div.rc-body > div > div.rc-content-main > div.sErrorText > p > button",
-		);
-		t("waitForSelector(success button)", ts); ts = Date.now();
+		// The confirmation dialog is not a reliable success signal: on some
+		// orders it never shows up and waiting for it burns the full 30s
+		// timeout. Reload the order and check the photo really was persisted.
+		const resultPage = (await page.locator("body").innerText().catch(() => ""))
+			.replace(/\s+/g, " ")
+			.trim()
+			.slice(0, 300);
 
-		await page.goBack();
-		t("goBack", ts); ts = Date.now();
-
+		await page.goto(orderPageUrl);
 		await page.waitForSelector("#P36_FOTO_input");
-		t("waitForSelector(#P36_FOTO_input) after goBack", ts);
+		const savedPhotos = await attachedPhotos();
+		t("verify saved photo", ts);
+
+		if (!savedPhotos.includes(imageFileName)) {
+			throw new Error(
+				`Photo "${imageFileName}" was not saved for order ${orderNumber}. ` +
+					`Attached: ${savedPhotos.join(", ") || "none"}. ` +
+					`Result page: ${resultPage}`,
+			);
+		}
 	} finally {
 		await page.close();
 	}
