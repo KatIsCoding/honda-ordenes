@@ -48,12 +48,19 @@ export async function executeOrder(
 		await page.waitForSelector("#P36_FOTO_input");
 		t("waitForSelector(#P36_FOTO_input) after login", ts); ts = Date.now();
 
-		// Skip upload if the same file is already attached to this order
-		const existingFile = await page.locator("#f04_0001").inputValue().catch(() => "");
+		// Skip upload if the same file is already attached to this order.
+		// #f04_0001 only exists when a photo is already attached, so check
+		// count() first: inputValue() on a missing locator would wait the
+		// full 30s action timeout on every fresh order.
 		const imageFileName = imagePath.split("/").pop() ?? "";
+		const existingFile =
+			(await page.locator("#f04_0001").count()) > 0
+				? await page.locator("#f04_0001").inputValue().catch(() => "")
+				: "";
+		t("existing file check", ts); ts = Date.now();
+
 		if (existingFile && existingFile === imageFileName) {
 			console.info("Image for order ", orderNumber, "already existed, early exit");
-			await page.close();
 			return;
 		}
 
